@@ -10,8 +10,46 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
+func getText(liturgicalDays []LiturgicalDay, locale string) string {
+	var text string
+	for _, day := range liturgicalDays {
+
+		text += "• "
+		//[day, date] //if memorial/feast/solemnity [rank] [name] in [seasonName] season using [color] color
+		rank, rankName, isHolyDayOfObligation, name, seasonNames, colorNames := strings.ToLower(day.Rank), day.RankName,
+			day.IsHolyDayOfObligation, day.Name, day.SeasonNames, day.ColorName
+		if rank == "memorial" || rank == "feast" || rank == "solemnity" {
+			if locale == "en" {
+				text += fmt.Sprintf("%s of %s", strings.Title(rankName), name)
+			} else {
+				text += fmt.Sprintf("%s %s", strings.Title(rankName), name)
+			}
+			if len(seasonNames) > 0 {
+				if locale == "en" {
+					text += fmt.Sprintf(" in the %s", seasonNames[0])
+				} else {
+					text += fmt.Sprintf(" %s", seasonNames[0])
+				}
+			}
+		} else {
+			text += fmt.Sprintf("%s", name)
+		}
+		if len(colorNames) > 0 {
+			text += fmt.Sprintf(". %s", strings.Title(colorNames[0]))
+		}
+
+		if isHolyDayOfObligation && locale == "en" {
+			text += fmt.Sprintf(". A Holy Day of Obligation.")
+		}
+
+		text += "\n"
+	}
+	return text
+
+}
 func main() {
 
 	//TODO utk convert ke functions dengan trigger pubsub, masukkan ke method
@@ -23,7 +61,6 @@ func main() {
 	if errEnv != nil {
 		log.Fatal(errEnv)
 	}
-
 	//declare this in functions
 	functionsUrl := os.Getenv("ROMCAL_API_FUNCTIONS_URL")
 	lineApiUrl, lineAccessToken := os.Getenv("LINE_API_URL"), os.Getenv("LINE_CHANNEL_ACCESS_TOKEN")
@@ -35,51 +72,31 @@ func main() {
 	}
 	data, _ := ioutil.ReadAll(response.Body)
 
-	var liturgicalDays []LiturgicalDay
-	json.Unmarshal(data, &liturgicalDays)
-
-	var messageItems []MessageItem
-	messageItems = append(
-		messageItems, MessageItem{
-			Type: "text",
-			Text: "Hello! Today is: ",
-		},
-	)
-
-	for i, day := range liturgicalDays {
-		if i == 3 {
-			break
-		}
-		//[day, date] //if memorial/feast/solemnity [rank] [name] in [seasonName] season using [color] color
-		rankName, isHolyDayOfObligation, name, seasonNames, colorNames := day.RankName,
-			day.IsHolyDayOfObligation, day.Name, day.SeasonNames, day.ColorName
-		var text = "- "
-		if isHolyDayOfObligation {
-			text += fmt.Sprintf("A Holy Day of Obligation of ")
-		}
-		if rankName == "memorial" || rankName == "feast" || rankName == "solemnity" {
-			text += fmt.Sprintf("%s of ", strings.Title(rankName))
-			text += fmt.Sprintf("%s ", name)
-
-			if len(seasonNames) > 0 {
-				text += fmt.Sprintf("in %s season ", seasonNames[0])
-			}
-		} else {
-			text += fmt.Sprintf("%s ", name)
-		}
-		if len(colorNames) > 0 {
-			text += fmt.Sprintf("using %s color ", colorNames[0])
-		}
-
-		messageItem := MessageItem{
-			Type: "text",
-			Text: text,
-		}
-		messageItems = append(messageItems, messageItem)
+	var allLiturgicalDays AllLiturgicalDays
+	errUnmarshal := json.Unmarshal(data, &allLiturgicalDays)
+	if errUnmarshal != nil {
+		log.Fatal(errUnmarshal)
+		return
 	}
 
+	currentTime := time.Now()
+	greetingText := fmt.Sprintf(
+		"Hello! Today is %s, %d %s\n\nThe Roman Catholic Church is celebrating: \n", currentTime.Weekday(),
+		currentTime.Day(), currentTime.Month(),
+	)
+	textEn, textLa := getText(allLiturgicalDays.LiturgicalDaysEn, "en"), getText(
+		allLiturgicalDays.LiturgicalDaysLa,
+		"la",
+	)
+
 	messages := Messages{
-		Messages: messageItems,
+		Messages: []MessageItem{
+			{
+				Type: "text", Text: fmt.Sprintf(
+					"%s\n%s\n%s", greetingText, textEn, textLa,
+				),
+			},
+		},
 	}
 	jsonValue, _ := json.Marshal(messages)
 	req, err2 := http.NewRequest("POST", lineApiUrl, bytes.NewBuffer(jsonValue))

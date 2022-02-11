@@ -1,7 +1,8 @@
 package main
 
-type LiturgicalDays []struct {
-	LiturgicalDays []LiturgicalDay
+type AllLiturgicalDays struct {
+	LiturgicalDaysEn []LiturgicalDay
+	LiturgicalDaysLa []LiturgicalDay
 }
 type LiturgicalDay struct {
 	Key                   string        `json:"key"`
